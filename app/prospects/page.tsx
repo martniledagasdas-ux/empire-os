@@ -1,56 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PageShell } from "../../app/components/page-shell";
 import { ProspectModal, type ProspectFormValues } from "../../app/components/prospect-modal";
 import { Panel, Badge } from "../../app/components/ui";
-
-type ProspectItem = ProspectFormValues & {
-  id: number;
-  createdAt: string;
-};
-
-const initialProspects: ProspectItem[] = [
-  {
-    id: 1,
-    fullName: "Ava Sullivan",
-    country: "United States",
-    phone: "+1 555 0182",
-    email: "ava@example.com",
-    facebookProfile: "facebook.com/ava",
-    interestLevel: "High",
-    status: "Follow-up Needed",
-    notes: "Interested in the premium leadership track and wants a walkthrough.",
-    nextFollowUpDate: "2026-07-02",
-    createdAt: "Today",
-  },
-  {
-    id: 2,
-    fullName: "Elijah Reed",
-    country: "Canada",
-    phone: "+1 416 223 1189",
-    email: "elijah@example.com",
-    facebookProfile: "facebook.com/elijah",
-    interestLevel: "Medium",
-    status: "Presentation Sent",
-    notes: "Requested a proposal with pricing and onboarding options.",
-    nextFollowUpDate: "2026-07-05",
-    createdAt: "Yesterday",
-  },
-  {
-    id: 3,
-    fullName: "Nora Patel",
-    country: "Australia",
-    phone: "+61 412 557 013",
-    email: "nora@example.com",
-    facebookProfile: "facebook.com/nora",
-    interestLevel: "High",
-    status: "New",
-    notes: "New inquiry from a growing team looking for mentorship support.",
-    nextFollowUpDate: "2026-07-07",
-    createdAt: "2 days ago",
-  },
-];
+import {
+  createProspectInSupabase,
+  deleteProspectFromSupabase,
+  fetchProspectsFromSupabase,
+  type ProspectRecord,
+  updateProspectInSupabase,
+} from "../../lib/supabase/prospects";
 
 const interestOptions = ["All", "Low", "Medium", "High"];
 const statusOptions = [
@@ -64,14 +24,17 @@ const statusOptions = [
 ];
 
 export default function ProspectsPage() {
-  const [prospects, setProspects] = useState<ProspectItem[]>(initialProspects);
+  const [prospects, setProspects] = useState<ProspectRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [interestFilter, setInterestFilter] = useState("All");
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
-  const [activeProspect, setActiveProspect] = useState<ProspectItem | null>(null);
+  const [activeProspect, setActiveProspect] = useState<ProspectRecord | null>(null);
   const [editingProspectId, setEditingProspectId] = useState<number | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const filteredProspects = useMemo(() => {
     return prospects.filter((prospect) => {
@@ -86,19 +49,36 @@ export default function ProspectsPage() {
     });
   }, [interestFilter, prospects, searchTerm, statusFilter]);
 
+  useEffect(() => {
+    void loadProspects();
+  }, []);
+
+  async function loadProspects() {
+    try {
+      setIsLoading(true);
+      setErrorMessage("");
+      const data = await fetchProspectsFromSupabase();
+      setProspects(data);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to load prospects.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   const openAddModal = () => {
     setEditingProspectId(null);
     setActiveProspect(null);
     setIsFormOpen(true);
   };
 
-  const openEditModal = (prospect: ProspectItem) => {
+  const openEditModal = (prospect: ProspectRecord) => {
     setEditingProspectId(prospect.id);
     setActiveProspect(prospect);
     setIsFormOpen(true);
   };
 
-  const openDetails = (prospect: ProspectItem) => {
+  const openDetails = (prospect: ProspectRecord) => {
     setActiveProspect(prospect);
     setIsDetailsOpen(true);
   };
@@ -110,29 +90,33 @@ export default function ProspectsPage() {
     setEditingProspectId(null);
   };
 
-  const handleSaveProspect = (values: ProspectFormValues) => {
-    if (editingProspectId) {
-      setProspects((current) =>
-        current.map((prospect) =>
-          prospect.id === editingProspectId
-            ? { ...prospect, ...values }
-            : prospect
-        )
-      );
-    } else {
-      setProspects((current) => [
-        {
-          ...values,
-          id: Date.now(),
-          createdAt: "Just now",
-        },
-        ...current,
-      ]);
+  const handleSaveProspect = async (values: ProspectFormValues) => {
+    try {
+      setIsSubmitting(true);
+      setErrorMessage("");
+      if (editingProspectId) {
+        const updated = await updateProspectInSupabase(editingProspectId, values);
+        setProspects((current) => current.map((prospect) => (prospect.id === updated.id ? updated : prospect)));
+      } else {
+        const created = await createProspectInSupabase(values);
+        setProspects((current) => [created, ...current]);
+      }
+      closeModals();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to save prospect.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleDeleteProspect = (id: number) => {
-    setProspects((current) => current.filter((prospect) => prospect.id !== id));
+  const handleDeleteProspect = async (id: number) => {
+    try {
+      setErrorMessage("");
+      await deleteProspectFromSupabase(id);
+      setProspects((current) => current.filter((prospect) => prospect.id !== id));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to delete prospect.");
+    }
   };
 
   return (
@@ -212,8 +196,20 @@ export default function ProspectsPage() {
           </div>
         </div>
 
+        {errorMessage ? (
+          <div className="rounded-[1.25rem] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {errorMessage}
+          </div>
+        ) : null}
+
         <Panel title="Prospects list" description="A curated view of current opportunities and conversations.">
-          <div className="hidden overflow-hidden rounded-[1.5rem] border border-slate-200/80 md:block">
+          {isLoading ? (
+            <div className="rounded-[1.25rem] border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+              Loading prospects from Supabase...
+            </div>
+          ) : (
+            <>
+              <div className="hidden overflow-hidden rounded-[1.5rem] border border-slate-200/80 md:block">
             <table className="min-w-full divide-y divide-slate-200 text-sm text-slate-700">
               <thead className="bg-slate-50">
                 <tr>
@@ -261,37 +257,39 @@ export default function ProspectsPage() {
             </table>
           </div>
 
-          <div className="space-y-3 md:hidden">
-            {filteredProspects.map((prospect) => (
-              <div key={prospect.id} className="rounded-[1.25rem] border border-slate-200 bg-slate-50 p-4 shadow-sm">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-950">{prospect.fullName}</p>
-                    <p className="mt-1 text-sm text-slate-600">{prospect.country}</p>
+              <div className="space-y-3 md:hidden">
+                {filteredProspects.map((prospect) => (
+                  <div key={prospect.id} className="rounded-[1.25rem] border border-slate-200 bg-slate-50 p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-950">{prospect.fullName}</p>
+                        <p className="mt-1 text-sm text-slate-600">{prospect.country}</p>
+                      </div>
+                      <Badge label={prospect.status} />
+                    </div>
+                    <p className="mt-3 text-sm text-slate-600">{prospect.email}</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Badge label={prospect.interestLevel} />
+                      <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                        {prospect.nextFollowUpDate || "No date"}
+                      </span>
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button onClick={() => openDetails(prospect)} className="flex-1 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700">
+                        View
+                      </button>
+                      <button onClick={() => openEditModal(prospect)} className="flex-1 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700">
+                        Edit
+                      </button>
+                      <button onClick={() => handleDeleteProspect(prospect.id)} className="flex-1 rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">
+                        Delete
+                      </button>
+                    </div>
                   </div>
-                  <Badge label={prospect.status} />
-                </div>
-                <p className="mt-3 text-sm text-slate-600">{prospect.email}</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Badge label={prospect.interestLevel} />
-                  <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    {prospect.nextFollowUpDate || "No date"}
-                  </span>
-                </div>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button onClick={() => openDetails(prospect)} className="flex-1 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700">
-                    View
-                  </button>
-                  <button onClick={() => openEditModal(prospect)} className="flex-1 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700">
-                    Edit
-                  </button>
-                  <button onClick={() => handleDeleteProspect(prospect.id)} className="flex-1 rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">
-                    Delete
-                  </button>
-                </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          )}
         </Panel>
       </div>
 

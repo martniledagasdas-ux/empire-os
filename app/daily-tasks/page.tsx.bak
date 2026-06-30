@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { PageShell } from "../components/page-shell";
 import { Panel, Badge } from "../components/ui";
 import {
   createDailyTaskInSupabase,
   deleteDailyTaskFromSupabase,
   fetchDailyTasksFromSupabase,
-  updateDailyTaskCompletionInSupabase,
+  toggleDailyTaskCompletionInSupabase,
+  type DailyTaskFormValues,
   type DailyTaskRecord,
   updateDailyTaskInSupabase,
 } from "../../lib/supabase/daily-tasks";
@@ -53,7 +54,7 @@ export default function DailyTasksPage() {
     }
   }
 
-  async function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!form.title.trim()) {
       setErrorMessage("Please add a task title.");
@@ -104,7 +105,7 @@ export default function DailyTasksPage() {
   async function handleToggleComplete(task: DailyTaskRecord) {
     try {
       setErrorMessage("");
-      const updated = await updateDailyTaskCompletionInSupabase(task.id, !task.is_completed);
+      const updated = await toggleDailyTaskCompletionInSupabase(task.id, !task.is_completed);
       setTasks((current) => current.map((item) => (item.id === updated.id ? updated : item)));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to update completion status.");

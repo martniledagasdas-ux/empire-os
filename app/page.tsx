@@ -11,7 +11,7 @@ const navItems = [
   { label: "Follow-ups", href: "/follow-ups", icon: "↺" },
   { label: "Trainings", href: "/training-library", icon: "✦" },
   { label: "Content", href: "/content-library", icon: "▣" },
-  { label: "Calendar", href: "/daily-tasks", icon: "◷" },
+  { label: "Daily Tasks", href: "/daily-tasks", icon: "◷" },
   { label: "Settings", href: "#", icon: "⚙" },
 ];
 
